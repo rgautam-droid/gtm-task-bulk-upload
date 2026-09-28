@@ -1,0 +1,26 @@
+{
+  "CMF Red 150": {
+    "taskFocusAreaName": "CMF Red 150",
+    "productHierarchyLevel": 0,
+    "calculationMeasure": 2,
+    "taskLevelHierarchy": 5,
+    "taskLevelHierarchyERPIDs": [
+      "E65",
+      "E53",
+      "ZV9"
+    ],
+    "totalTarget": 89,
+    "achievedTarget": 0
+  },
+  "Brilliant Star": {
+    "taskFocusAreaName": "Brilliant Star",
+    "productHierarchyLevel": 0,
+    "calculationMeasure": 2,
+    "taskLevelHierarchy": 5,
+    "taskLevelHierarchyERPIDs": [
+      "FO5"
+    ],
+    "totalTarget": 89,
+    "achievedTarget": 0
+  }
+}
