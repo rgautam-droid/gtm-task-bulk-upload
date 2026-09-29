@@ -330,6 +330,7 @@ def execute(rows: list[dict], template: dict, label: str):
     log_ph = st.empty()
 
     results, rec_fail = [], []
+    bad_ids: set = set()
     ok_codes = fail_codes = 0
     t0 = time.time()
     started = f"{datetime.now():%Y-%m-%d %H:%M:%S}"
@@ -342,6 +343,7 @@ def execute(rows: list[dict], template: dict, label: str):
                         "counts": json.dumps(summ["counts"]) if summ["counts"] else "",
                         "record_failures": len(summ["record_failures"])})
             rec_fail += [{"batch": res["batch"], **x} for x in summ["record_failures"]]
+            bad_ids.update(summ["invalid_hierarchy_ids"])
             results.append(res)
             if res["status"] == "OK":
                 ok_codes += res["codes"]
@@ -380,7 +382,7 @@ def execute(rows: list[dict], template: dict, label: str):
         run = {"label": label, "started": started, "finished": f"{datetime.now():%Y-%m-%d %H:%M:%S}", "url": cfg.url,
                "template": template, "total": len(rows), "ok_codes": ok_codes, "batches":
                sorted(results, key=lambda b: b["batch"]), "failed_rows": failed_rows,
-               "failed_df": failed_frame(failed_rows, reasons), "record_failures": rec_fail,
+               "failed_df": failed_frame(failed_rows, reasons), "record_failures": rec_fail, "invalid_hierarchy_ids": sorted(bad_ids),
                "log": log, "interrupted": interrupted, "seconds": round(time.time() - t0, 1)}
         run["artifacts"] = build_artifacts(run)
         ss.last_run = run
@@ -424,18 +426,30 @@ with tab_u:
     lr = ss.last_run
     retry = False
     if lr and lr["failed_rows"]:
-        retry = b3.button(f"🔁 Retry {len(lr['failed_rows']):,} failed", width="stretch",
+        retry = b3.button(f"🔁 Retry {len(lr['failed_rows']):,} failed (current template)", width="stretch",
                           disabled=not api_pass)
 
     if start:
         execute(send_rows, tpl, "Upload")
     elif retry:
-        execute(lr["failed_rows"], lr["template"], "Retry failed")
+        execute(lr["failed_rows"], tpl, "Retry failed")
 
     # ------------------------------------------------------ results ---
     if lr:
         st.divider()
         st.subheader("Last run")
+        bad = lr.get("invalid_hierarchy_ids") or []
+        if bad:
+            cur = core.split_ids(ss.t_erp)
+            still = [x for x in bad if x in cur]
+            st.error(f"API rejected **{len(bad)} TaskLevelHierarchyERPID(s)** as invalid: `{', '.join(bad)}` — "
+                     "every task carrying them failed. Check these codes in the Colpal hierarchy master.")
+            if still:
+                def _drop_bad(ids=tuple(still)):
+                    ss.t_erp = ", ".join(x for x in core.split_ids(ss.t_erp) if x not in ids)
+                st.button(f"🧹 Remove {len(still)} invalid ID(s) from template", on_click=_drop_bad)
+            else:
+                st.success("Invalid IDs are already removed from the current template → hit Retry (current template).")
         n_fail = len(lr["failed_df"])
         if lr["interrupted"]:
             st.warning(f"Run was stopped. {n_fail:,} task(s) failed or not confirmed.")

@@ -207,9 +207,12 @@ def body_retryable(text: str) -> bool:
     return j.get("responseStatus") in (0, "0") and total in (0, "0", None)
 
 
+_INVALID_IDS_RE = re.compile(r"Invalid\s+TaskLevelHierarchyERPIDs\s*:\s*([A-Za-z0-9_\-, ]+)", re.I)
+
+
 def summarise_response(text: str) -> dict:
-    """Best-effort extraction of message / counts / record-level failures."""
-    out = {"message": "", "counts": {}, "record_failures": []}
+    """Best-effort extraction of message / counts / record-level failures / invalid hierarchy IDs."""
+    out = {"message": "", "counts": {}, "record_failures": [], "invalid_hierarchy_ids": []}
     try:
         j = json.loads(text)
     except Exception:
@@ -221,6 +224,7 @@ def summarise_response(text: str) -> dict:
     cnt = j.get("responseStatusCount")
     if isinstance(cnt, dict):
         out["counts"] = cnt
+    bad_ids: set[str] = set()
     for k, v in j.items():  # e.g. responseList / ResponseList
         if isinstance(v, list) and "list" in k.lower():
             for it in v:
@@ -228,10 +232,18 @@ def summarise_response(text: str) -> dict:
                     continue
                 low = {kk.lower(): vv for kk, vv in it.items()}
                 st = str(low.get("responsestatus", low.get("status", ""))).lower()
-                if any(w in st for w in ("fail", "error", "invalid")):
-                    rid = next((low[x] for x in ("erpid", "taskentityerpid", "entityerpid", "id") if x in low), "")
-                    out["record_failures"].append({"code": str(rid), "status": st,
-                                                   "message": str(low.get("message", ""))[:300]})
+                failed = low.get("success") is False or any(w in st for w in ("fail", "error", "invalid"))
+                if not failed:
+                    continue
+                ent = {kk.lower(): vv for kk, vv in (low.get("entities") or {}).items()} \
+                    if isinstance(low.get("entities"), dict) else {}
+                rid = next((low[x] for x in ("erpid", "taskentityerpid", "entityerpid", "id") if low.get(x)),
+                           ent.get("outleterpid") or ent.get("taskentityerpid") or "")
+                msg = str(low.get("message", ""))
+                for m in _INVALID_IDS_RE.finditer(msg):
+                    bad_ids.update(x.strip() for x in m.group(1).split(",") if x.strip())
+                out["record_failures"].append({"code": str(rid), "status": st or "failed", "message": msg[:300]})
+    out["invalid_hierarchy_ids"] = sorted(bad_ids)
     return out
 
 
